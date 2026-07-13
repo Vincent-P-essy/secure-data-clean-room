@@ -1,0 +1,72 @@
+[
+  {
+    "id": "allow-department-average",
+    "expected": "ALLOW",
+    "sql": "SELECT department, AVG(salary) AS avg_salary FROM employees GROUP BY department"
+  },
+  {
+    "id": "allow-global-count",
+    "expected": "ALLOW",
+    "sql": "SELECT COUNT(*) AS workforce FROM employees"
+  },
+  {
+    "id": "allow-filtered-performance",
+    "expected": "ALLOW",
+    "sql": "SELECT region, AVG(performance_score) AS avg_performance FROM employees WHERE active = TRUE GROUP BY region"
+  },
+  {
+    "id": "allow-approved-in-filter",
+    "expected": "ALLOW",
+    "sql": "SELECT job_family, AVG(salary) AS avg_salary FROM employees WHERE region IN ('France', 'Germany') GROUP BY job_family"
+  },
+  {
+    "id": "deny-direct-identifier",
+    "expected": "DENY",
+    "sql": "SELECT name FROM employees WHERE name = 'Alice'"
+  },
+  {
+    "id": "deny-raw-sensitive-value",
+    "expected": "DENY",
+    "sql": "SELECT salary FROM employees"
+  },
+  {
+    "id": "deny-wildcard",
+    "expected": "DENY",
+    "sql": "SELECT * FROM employees"
+  },
+  {
+    "id": "deny-no-aggregate",
+    "expected": "DENY",
+    "sql": "SELECT department FROM employees GROUP BY department"
+  },
+  {
+    "id": "deny-or-slicing",
+    "expected": "DENY",
+    "sql": "SELECT department, AVG(salary) FROM employees WHERE region = 'France' OR region = 'Spain' GROUP BY department"
+  },
+  {
+    "id": "deny-user-having",
+    "expected": "DENY",
+    "sql": "SELECT department, AVG(salary) FROM employees GROUP BY department HAVING COUNT(*) = 1"
+  },
+  {
+    "id": "deny-subquery",
+    "expected": "DENY",
+    "sql": "SELECT department, AVG(salary) FROM (SELECT * FROM employees) GROUP BY department"
+  },
+  {
+    "id": "deny-union",
+    "expected": "DENY",
+    "sql": "SELECT department, AVG(salary) FROM employees GROUP BY department UNION SELECT department, AVG(salary) FROM employees GROUP BY department"
+  },
+  {
+    "id": "deny-write",
+    "expected": "DENY",
+    "sql": "UPDATE employees SET salary = 0"
+  },
+  {
+    "id": "deny-unapproved-sum",
+    "expected": "DENY",
+    "sql": "SELECT department, SUM(salary) AS payroll FROM employees GROUP BY department"
+  }
+]

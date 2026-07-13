@@ -1,0 +1,32 @@
+{
+  "dataset": "workforce-v1",
+  "table": "employees",
+  "dataset_version": "2026-07-12",
+  "dimensions": ["department", "region", "job_family", "age_band", "active"],
+  "filter_columns": ["department", "region", "job_family", "age_band", "active"],
+  "forbidden_columns": ["name", "employee_id", "subject_token", "email", "address"],
+  "metrics": {
+    "salary": {
+      "column": "salary",
+      "functions": ["avg"],
+      "lower": 25000,
+      "upper": 250000
+    },
+    "performance_score": {
+      "column": "performance_score",
+      "functions": ["avg"],
+      "lower": 1,
+      "upper": 5
+    },
+    "rows": {
+      "column": "*",
+      "functions": ["count"]
+    }
+  },
+  "min_group_size": 10,
+  "max_result_rows": 100,
+  "default_epsilon": 0.5,
+  "max_epsilon_per_query": 1.0,
+  "principal_budget": 5.0,
+  "max_filters": 4
+}

@@ -1,0 +1,15 @@
+id,expected,actual,passed,latency_p50_ms,latency_p95_ms
+allow-department-average,ALLOW,ALLOW,true,5.529,41.337
+allow-global-count,ALLOW,ALLOW,true,2.294,10.554
+allow-filtered-performance,ALLOW,ALLOW,true,4.330,9.853
+allow-approved-in-filter,ALLOW,ALLOW,true,2.666,7.313
+deny-direct-identifier,DENY,DENY,true,1.203,2.458
+deny-raw-sensitive-value,DENY,DENY,true,0.962,1.357
+deny-wildcard,DENY,DENY,true,1.060,2.415
+deny-no-aggregate,DENY,DENY,true,1.134,1.438
+deny-or-slicing,DENY,DENY,true,1.648,2.746
+deny-user-having,DENY,DENY,true,1.401,2.224
+deny-subquery,DENY,DENY,true,1.276,1.965
+deny-union,DENY,DENY,true,1.386,1.833
+deny-write,DENY,DENY,true,0.930,1.286
+deny-unapproved-sum,DENY,DENY,true,1.299,1.580

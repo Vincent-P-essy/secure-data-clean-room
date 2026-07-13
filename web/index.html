@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Secure Data Clean Room</title>
+    <link rel="stylesheet" href="/assets/style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">CONTROLLED ANALYTICS / WORKFORCE-V1</p>
+        <h1>Ask for aggregates.<br><span>Never receive raw rows.</span></h1>
+        <p class="lede">Every query is parsed, reduced to an allowlisted plan, rebuilt with parameters,
+          privacy-protected, budgeted, and committed to a tamper-evident audit chain.</p>
+      </header>
+      <section class="panel">
+        <label for="token">Demo API key</label>
+        <input id="token" type="password" value="demo-analyst-key" autocomplete="off">
+        <label for="sql">SQL request</label>
+        <textarea id="sql" spellcheck="false">SELECT department, AVG(salary) AS avg_salary, COUNT(*) AS employees
+FROM employees
+GROUP BY department</textarea>
+        <div class="actions">
+          <button id="run">Run protected query</button>
+          <button id="explain" class="secondary">Explain policy</button>
+        </div>
+      </section>
+      <section class="status" aria-live="polite">
+        <div><span>Decision</span><strong id="decision">READY</strong></div>
+        <div><span>Privacy budget</span><strong id="budget">—</strong></div>
+        <div><span>Latency</span><strong id="latency">—</strong></div>
+      </section>
+      <section class="panel output">
+        <h2>Policy evidence</h2>
+        <div id="reasons" class="chips"></div>
+        <div class="table-wrap"><table id="results"></table></div>
+        <pre id="details">Submit a query to see its constrained plan.</pre>
+      </section>
+    </main>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
