@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+from dataclasses import replace
+
 from secure_data_clean_room.models import Decision, Principal, QueryRequest, Role
 from secure_data_clean_room.service import CleanRoomService
+from secure_data_clean_room.settings import Settings
 
 
 def test_allowed_query_returns_only_protected_aggregates(
@@ -76,3 +80,47 @@ def test_explain_has_no_ledger_side_effect(service: CleanRoomService, analyst: P
     assert denied.decision is Decision.DENY
     assert service.state.budget(analyst.subject, service.policy.principal_budget).spent == 0
     assert service.state.verify_audit().entries_checked == 0
+
+
+def test_equivalent_alias_release_reuses_budget_and_noise(
+    service: CleanRoomService, analyst: Principal
+) -> None:
+    first = service.query(
+        QueryRequest(
+            sql="SELECT department, AVG(salary) AS first FROM employees GROUP BY department"
+        ),
+        analyst,
+    )
+    renamed = service.query(
+        QueryRequest(
+            sql="SELECT AVG(salary) AS renamed, department FROM employees GROUP BY department"
+        ),
+        analyst,
+    )
+    assert first.decision is Decision.ALLOW and renamed.decision is Decision.ALLOW
+    first_values = {row["department"]: row["first"] for row in first.rows}
+    renamed_values = {row["department"]: row["renamed"] for row in renamed.rows}
+    assert first_values == renamed_values
+    assert renamed.privacy is not None and renamed.privacy.budget_spent == 0.5
+    assert "STICKY_RELEASE_REUSED" in renamed.reason_codes
+
+
+def test_dataset_version_migration_creates_a_new_budgeted_release(
+    settings: Settings, analyst: Principal
+) -> None:
+    payload = json.loads(settings.policy_path.read_text(encoding="utf-8"))
+    policy_path = settings.state_path.parent / "versioned-policy.json"
+    policy_path.write_text(json.dumps(payload), encoding="utf-8")
+    version_one = CleanRoomService(replace(settings, policy_path=policy_path))
+    version_one.initialize_demo()
+    query = QueryRequest(sql="SELECT COUNT(*) AS total FROM employees")
+    first = version_one.query(query, analyst)
+
+    payload["dataset_version"] = "2026-07-13"
+    policy_path.write_text(json.dumps(payload), encoding="utf-8")
+    version_two = CleanRoomService(replace(settings, policy_path=policy_path))
+    second = version_two.query(query, analyst)
+
+    assert first.privacy is not None and first.privacy.budget_spent == 0.5
+    assert second.privacy is not None and second.privacy.budget_spent == 1.0
+    assert "STICKY_RELEASE_REUSED" not in second.reason_codes

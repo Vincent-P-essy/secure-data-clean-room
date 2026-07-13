@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import math
 from dataclasses import dataclass
 
@@ -36,7 +37,10 @@ class PrivacyMechanism:
             group_size = int(row.get("__group_size") or 0)
             if group_size < self.policy.min_group_size:
                 continue
-            group_key = "|".join(str(row.get(dimension)) for dimension in plan.dimensions)
+            group_key = json.dumps(
+                [(dimension, row.get(dimension)) for dimension in sorted(plan.dimensions)],
+                separators=(",", ":"),
+            )
             output: dict[str, Scalar] = {
                 dimension: row.get(dimension) for dimension in plan.dimensions
             }
@@ -48,7 +52,7 @@ class PrivacyMechanism:
                 scale = self._scale(metric, group_size, epsilon_per_metric)
                 token = (
                     f"{self.policy.dataset_version}\0{release_fingerprint}\0"
-                    f"{group_key}\0{metric.alias}"
+                    f"{group_key}\0{metric.function}:{metric.column or '*'}"
                 )
                 value = float(raw) + self._laplace(token, scale)
                 if metric.function == "avg" and metric.column is not None:

@@ -10,12 +10,19 @@ from pathlib import Path
 
 from .models import AuditVerification, BudgetSnapshot, Principal, QueryPlan
 
+_STATE_SCHEMA_VERSION = 2
+_ZERO_HASH = "0" * 64
+
 
 class BudgetExceeded(RuntimeError):
     pass
 
 
 class DifferencingRisk(RuntimeError):
+    pass
+
+
+class AuditIntegrityError(RuntimeError):
     pass
 
 
@@ -45,11 +52,13 @@ class StateStore:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            prior_schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             connection.executescript(
                 """
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS privacy_spend (
                     principal TEXT NOT NULL,
+                    dataset_version TEXT NOT NULL,
                     query_fingerprint TEXT NOT NULL,
                     epsilon REAL NOT NULL CHECK (epsilon > 0),
                     charged_at TEXT NOT NULL,
@@ -77,11 +86,54 @@ class StateStore:
                     previous_hash TEXT NOT NULL,
                     entry_hash TEXT NOT NULL UNIQUE
                 );
+                CREATE TABLE IF NOT EXISTS audit_checkpoint (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    entry_count INTEGER NOT NULL CHECK (entry_count >= 0),
+                    head_hash TEXT NOT NULL CHECK (length(head_hash) = 64),
+                    checkpoint_hmac TEXT NOT NULL CHECK (length(checkpoint_hmac) = 64)
+                );
                 """
             )
+            spend_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(privacy_spend)").fetchall()
+            }
+            if "dataset_version" not in spend_columns:
+                connection.execute(
+                    "ALTER TABLE privacy_spend "
+                    "ADD COLUMN dataset_version TEXT NOT NULL DEFAULT 'legacy-unversioned'"
+                )
+
+            checkpoint = connection.execute(
+                "SELECT entry_count FROM audit_checkpoint WHERE singleton = 1"
+            ).fetchone()
+            if checkpoint is None:
+                if prior_schema_version >= _STATE_SCHEMA_VERSION:
+                    raise AuditIntegrityError("local audit checkpoint is missing")
+                entries = connection.execute("SELECT * FROM audit_log ORDER BY id").fetchall()
+                verification, head_hash = self._verify_entries(entries)
+                if not verification.valid:
+                    raise AuditIntegrityError(
+                        "cannot establish migration checkpoint over an invalid audit chain"
+                    )
+                entry_count = len(entries)
+                connection.execute(
+                    "INSERT INTO audit_checkpoint VALUES (1, ?, ?, ?)",
+                    (
+                        entry_count,
+                        head_hash,
+                        self._checkpoint_hmac(entry_count, head_hash),
+                    ),
+                )
+            connection.execute(f"PRAGMA user_version = {_STATE_SCHEMA_VERSION}")
 
     def reserve_budget(
-        self, principal: str, fingerprint: str, epsilon: float, limit: float
+        self,
+        principal: str,
+        dataset_version: str,
+        fingerprint: str,
+        epsilon: float,
+        limit: float,
     ) -> Reservation:
         now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
@@ -104,8 +156,12 @@ class StateStore:
                         f"privacy budget exhausted: {spent:.3f} spent of {limit:.3f}"
                     )
                 connection.execute(
-                    "INSERT INTO privacy_spend VALUES (?, ?, ?, ?)",
-                    (principal, fingerprint, epsilon, now),
+                    """
+                    INSERT INTO privacy_spend
+                        (principal, dataset_version, query_fingerprint, epsilon, charged_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (principal, dataset_version, fingerprint, epsilon, now),
                 )
                 spent += epsilon
             connection.commit()
@@ -142,21 +198,13 @@ class StateStore:
         maximum_variants: int = 4,
         window: timedelta = timedelta(hours=24),
     ) -> None:
-        structure_payload = {
-            "dataset": plan.dataset,
-            "dimensions": plan.dimensions,
-            "metrics": [metric.as_dict() for metric in plan.metrics],
-            "filter_shape": [
-                {"column": item.column, "operator": item.operator, "arity": len(item.values)}
-                for item in plan.filters
-            ],
-        }
+        structure_payload = plan.variant_structure_payload()
         structure_hash = hashlib.sha256(
             json.dumps(structure_payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         filter_hash = hashlib.sha256(
             json.dumps(
-                [item.as_dict() for item in plan.filters],
+                plan.semantic_filters_payload(),
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode()
@@ -211,11 +259,33 @@ class StateStore:
         reasons = json.dumps(reason_codes, sort_keys=True, separators=(",", ":"))
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            previous = connection.execute(
+            checkpoint = connection.execute(
+                "SELECT * FROM audit_checkpoint WHERE singleton = 1"
+            ).fetchone()
+            if checkpoint is None:
+                connection.rollback()
+                raise AuditIntegrityError("local audit checkpoint is missing")
+            try:
+                entry_count = int(checkpoint["entry_count"])
+                previous_hash = str(checkpoint["head_hash"])
+                checkpoint_hmac = str(checkpoint["checkpoint_hmac"])
+            except (KeyError, TypeError, ValueError) as error:
+                connection.rollback()
+                raise AuditIntegrityError("local audit checkpoint is malformed") from error
+            expected_checkpoint = self._checkpoint_hmac(entry_count, previous_hash)
+            if not hmac.compare_digest(expected_checkpoint, checkpoint_hmac):
+                connection.rollback()
+                raise AuditIntegrityError("local audit checkpoint authentication failed")
+            tail = connection.execute(
                 "SELECT id, entry_hash FROM audit_log ORDER BY id DESC LIMIT 1"
             ).fetchone()
-            entry_id = 1 if previous is None else int(previous["id"]) + 1
-            previous_hash = "0" * 64 if previous is None else str(previous["entry_hash"])
+            tail_count = 0 if tail is None else int(tail["id"])
+            tail_hash = _ZERO_HASH if tail is None else str(tail["entry_hash"])
+            if tail_count != entry_count or not hmac.compare_digest(tail_hash, previous_hash):
+                connection.rollback()
+                raise AuditIntegrityError("audit log does not match its local checkpoint")
+
+            entry_id = entry_count + 1
             canonical = json.dumps(
                 {
                     "id": entry_id,
@@ -254,38 +324,129 @@ class StateStore:
                     entry_hash,
                 ),
             )
+            connection.execute(
+                """
+                UPDATE audit_checkpoint
+                SET entry_count = ?, head_hash = ?, checkpoint_hmac = ?
+                WHERE singleton = 1
+                """,
+                (
+                    entry_id,
+                    entry_hash,
+                    self._checkpoint_hmac(entry_id, entry_hash),
+                ),
+            )
             connection.commit()
         return entry_id
 
     def verify_audit(self) -> AuditVerification:
         with self._connect() as connection:
             entries = connection.execute("SELECT * FROM audit_log ORDER BY id").fetchall()
-        previous_hash = "0" * 64
+            checkpoint = connection.execute(
+                "SELECT * FROM audit_checkpoint WHERE singleton = 1"
+            ).fetchone()
+        if checkpoint is None:
+            return AuditVerification(valid=False, entries_checked=0)
+        try:
+            expected_count = int(checkpoint["entry_count"])
+            expected_head = str(checkpoint["head_hash"])
+            checkpoint_hmac = str(checkpoint["checkpoint_hmac"])
+        except (KeyError, TypeError, ValueError):
+            return AuditVerification(valid=False, entries_checked=0)
+        expected_checkpoint = self._checkpoint_hmac(expected_count, expected_head)
+        if not hmac.compare_digest(expected_checkpoint, checkpoint_hmac):
+            return AuditVerification(valid=False, entries_checked=0)
+
+        verification, actual_head = self._verify_entries(entries)
+        if not verification.valid:
+            return verification
+        if len(entries) != expected_count:
+            return AuditVerification(
+                valid=False,
+                entries_checked=len(entries),
+                first_invalid_entry=len(entries) + 1,
+            )
+        if not hmac.compare_digest(actual_head, expected_head):
+            return AuditVerification(
+                valid=False,
+                entries_checked=len(entries),
+                first_invalid_entry=expected_count if expected_count else None,
+            )
+        return AuditVerification(valid=True, entries_checked=len(entries))
+
+    def _verify_entries(self, entries: list[sqlite3.Row]) -> tuple[AuditVerification, str]:
+        previous_hash = _ZERO_HASH
         for index, entry in enumerate(entries, start=1):
             if int(entry["id"]) != index or entry["previous_hash"] != previous_hash:
-                return AuditVerification(
-                    valid=False, entries_checked=index - 1, first_invalid_entry=int(entry["id"])
+                return (
+                    AuditVerification(
+                        valid=False,
+                        entries_checked=index - 1,
+                        first_invalid_entry=int(entry["id"]),
+                    ),
+                    previous_hash,
                 )
-            canonical = json.dumps(
-                {
-                    "id": int(entry["id"]),
-                    "timestamp": entry["timestamp"],
-                    "principal": entry["principal"],
-                    "role": entry["role"],
-                    "action": entry["action"],
-                    "outcome": entry["outcome"],
-                    "request_id": entry["request_id"],
-                    "query_hash": entry["query_hash"],
-                    "reason_codes": json.loads(entry["reason_codes"]),
-                    "previous_hash": entry["previous_hash"],
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            )
+            try:
+                reason_codes = json.loads(entry["reason_codes"])
+            except (json.JSONDecodeError, TypeError):
+                return (
+                    AuditVerification(
+                        valid=False, entries_checked=index - 1, first_invalid_entry=index
+                    ),
+                    previous_hash,
+                )
+            if not isinstance(reason_codes, list) or not all(
+                isinstance(reason, str) for reason in reason_codes
+            ):
+                return (
+                    AuditVerification(
+                        valid=False, entries_checked=index - 1, first_invalid_entry=index
+                    ),
+                    previous_hash,
+                )
+            try:
+                canonical = json.dumps(
+                    {
+                        "id": int(entry["id"]),
+                        "timestamp": entry["timestamp"],
+                        "principal": entry["principal"],
+                        "role": entry["role"],
+                        "action": entry["action"],
+                        "outcome": entry["outcome"],
+                        "request_id": entry["request_id"],
+                        "query_hash": entry["query_hash"],
+                        "reason_codes": reason_codes,
+                        "previous_hash": entry["previous_hash"],
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            except (KeyError, TypeError, ValueError):
+                return (
+                    AuditVerification(
+                        valid=False, entries_checked=index - 1, first_invalid_entry=index
+                    ),
+                    previous_hash,
+                )
             expected = hmac.new(self.audit_key, canonical.encode(), "sha256").hexdigest()
             if not hmac.compare_digest(expected, str(entry["entry_hash"])):
-                return AuditVerification(
-                    valid=False, entries_checked=index - 1, first_invalid_entry=int(entry["id"])
+                return (
+                    AuditVerification(
+                        valid=False, entries_checked=index - 1, first_invalid_entry=int(entry["id"])
+                    ),
+                    previous_hash,
                 )
             previous_hash = str(entry["entry_hash"])
-        return AuditVerification(valid=True, entries_checked=len(entries))
+        return AuditVerification(valid=True, entries_checked=len(entries)), previous_hash
+
+    def _checkpoint_hmac(self, entry_count: int, head_hash: str) -> str:
+        canonical = json.dumps(
+            {
+                "schema": "local-audit-checkpoint-v1",
+                "entry_count": entry_count,
+                "head_hash": head_hash,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hmac.new(self.audit_key, canonical.encode(), "sha256").hexdigest()

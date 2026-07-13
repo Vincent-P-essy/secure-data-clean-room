@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.responses import Response
 
+from . import __version__
 from .models import (
     AuditVerification,
     BudgetSnapshot,
@@ -32,7 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Secure Data Clean Room",
-        version="0.1.0",
+        version=__version__,
         description="Policy-constrained aggregate analysis; raw rows are never returned.",
     )
     app.state.service = service
@@ -108,7 +109,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             f"clean_room_audit_entries {verification.entries_checked}\n"
         )
 
-    web_root = Path(__file__).resolve().parents[2] / "web"
+    repository_web = Path(__file__).resolve().parents[2] / "web"
+    packaged_web = Path(__file__).resolve().parent / "resources/web"
+    web_root = repository_web if repository_web.is_dir() else packaged_web
     if web_root.is_dir():
         app.mount("/assets", StaticFiles(directory=web_root), name="assets")
 

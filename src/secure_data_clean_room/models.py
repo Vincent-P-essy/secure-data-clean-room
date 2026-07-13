@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal, TypeAlias
 
@@ -73,6 +75,18 @@ class FilterPredicate:
     def as_dict(self) -> dict[str, Any]:
         return {"column": self.column, "operator": self.operator, "values": self.values}
 
+    def semantic_payload(self) -> dict[str, Any]:
+        values = [_canonical_scalar(value) for value in self.values]
+        if self.operator == "in":
+            values = sorted(
+                {
+                    json.dumps(value, sort_keys=True, separators=(",", ":")): value
+                    for value in values
+                }.values(),
+                key=lambda value: json.dumps(value, sort_keys=True, separators=(",", ":")),
+            )
+        return {"column": self.column, "operator": self.operator, "values": values}
+
 
 @dataclass(frozen=True, slots=True)
 class Metric:
@@ -90,10 +104,12 @@ class QueryPlan:
     dimensions: tuple[str, ...]
     metrics: tuple[Metric, ...]
     filters: tuple[FilterPredicate, ...]
+    dataset_version: str = "unversioned"
 
     def canonical_payload(self) -> dict[str, Any]:
         return {
             "dataset": self.dataset,
+            "dataset_version": self.dataset_version,
             "dimensions": self.dimensions,
             "metrics": [metric.as_dict() for metric in self.metrics],
             "filters": [predicate.as_dict() for predicate in self.filters],
@@ -103,7 +119,62 @@ class QueryPlan:
         return json.dumps(self.canonical_payload(), sort_keys=True, separators=(",", ":"))
 
     def fingerprint(self) -> str:
-        return hashlib.sha256(self.canonical_json().encode()).hexdigest()
+        """Identify a semantic privacy release, not presentation-only SQL details."""
+        payload = {
+            "dataset": self.dataset,
+            "dataset_version": self.dataset_version,
+            "dimensions": sorted(set(self.dimensions)),
+            "metrics": sorted({(metric.function, metric.column or "*") for metric in self.metrics}),
+            "filters": _sorted_unique_payloads(
+                predicate.semantic_payload() for predicate in self.filters
+            ),
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def variant_structure_payload(self) -> dict[str, Any]:
+        """Canonical aggregate shape used by the differencing guard."""
+        filters = _sorted_unique_payloads(
+            {
+                "column": predicate.column,
+                "operator": predicate.operator,
+            }
+            for predicate in self.filters
+        )
+        return {
+            "dataset": self.dataset,
+            "dataset_version": self.dataset_version,
+            "dimensions": sorted(set(self.dimensions)),
+            "metrics": sorted({(metric.function, metric.column or "*") for metric in self.metrics}),
+            "filters": filters,
+        }
+
+    def semantic_filters_payload(self) -> list[dict[str, Any]]:
+        return _sorted_unique_payloads(predicate.semantic_payload() for predicate in self.filters)
+
+
+def _sorted_unique_payloads(payloads: Any) -> list[dict[str, Any]]:
+    indexed: dict[str, dict[str, Any]] = {}
+    for payload in payloads:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        indexed[encoded] = payload
+    return [indexed[key] for key in sorted(indexed)]
+
+
+def _canonical_scalar(value: Scalar) -> dict[str, str]:
+    if value is None:
+        return {"type": "null", "value": "null"}
+    if isinstance(value, str):
+        return {"type": "string", "value": value}
+    if isinstance(value, bool):
+        return {"type": "number", "value": "1" if value else "0"}
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("filter numbers must be finite")
+        decimal = Decimal(str(value))
+        normalized = "0" if decimal == 0 else format(decimal.normalize(), "f")
+        return {"type": "number", "value": normalized}
+    raise TypeError(f"unsupported scalar {type(value).__name__}")
 
 
 class QueryRequest(BaseModel):

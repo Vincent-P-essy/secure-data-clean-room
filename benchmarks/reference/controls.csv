@@ -1,0 +1,6 @@
+id,expected,actual,passed,evidence
+sticky-equivalent-release,PASS,PASS,True,"{""budget_spent"":0.5,""same_protected_values"":true}"
+privacy-budget-exhaustion,PASS,PASS,True,"{""decisions"":[""ALLOW"",""ALLOW"",""ALLOW"",""ALLOW"",""ALLOW"",""DENY""],""last_reason_codes"":[""PRIVACY_BUDGET_EXHAUSTED""]}"
+control-plane-roles-denied-data,PASS,PASS,True,"{""reason_codes"":[[""ROLE_CANNOT_QUERY_DATA""],[""ROLE_CANNOT_QUERY_DATA""]]}"
+canonical-differencing-guard,PASS,PASS,True,"{""decisions"":[""ALLOW"",""ALLOW"",""ALLOW"",""ALLOW"",""DENY""],""last_reason_codes"":[""DIFFERENCING_RISK""]}"
+audit-checkpoint-truncation,PASS,PASS,True,"{""full_delete_valid"":false,""tail_delete_valid"":false}"

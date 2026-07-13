@@ -14,7 +14,9 @@ to reason about as a privacy policy.
 
 Accept SQL only as an analyst-facing notation. Parse it, extract a small typed
 plan, discard the source statement, and compile a new parameterized query from
-policy-controlled identifiers. Fail closed for unsupported syntax.
+policy-controlled identifiers. Fail closed for unsupported syntax. The dataset
+boundary accepts that structured plan rather than an SQL string, revalidates it,
+and performs its own compilation before invoking a private SQLite routine.
 
 ## Consequences
 
