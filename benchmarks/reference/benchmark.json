@@ -99,8 +99,8 @@
       "actual": "ALLOW",
       "expected": "ALLOW",
       "id": "allow-department-average",
-      "latency_p50_ms": 1.444,
-      "latency_p95_ms": 3.471,
+      "latency_p50_ms": 1.509,
+      "latency_p95_ms": 3.749,
       "passed": true,
       "reason_codes": [
         "AGGREGATE_POLICY_ALLOWED",
@@ -114,8 +114,8 @@
       "actual": "ALLOW",
       "expected": "ALLOW",
       "id": "allow-global-count",
-      "latency_p50_ms": 1.284,
-      "latency_p95_ms": 2.348,
+      "latency_p50_ms": 1.252,
+      "latency_p95_ms": 1.713,
       "passed": true,
       "reason_codes": [
         "AGGREGATE_POLICY_ALLOWED",
@@ -129,8 +129,8 @@
       "actual": "ALLOW",
       "expected": "ALLOW",
       "id": "allow-filtered-performance",
-      "latency_p50_ms": 1.471,
-      "latency_p95_ms": 2.173,
+      "latency_p50_ms": 1.901,
+      "latency_p95_ms": 2.886,
       "passed": true,
       "reason_codes": [
         "AGGREGATE_POLICY_ALLOWED",
@@ -144,8 +144,8 @@
       "actual": "ALLOW",
       "expected": "ALLOW",
       "id": "allow-approved-in-filter",
-      "latency_p50_ms": 1.607,
-      "latency_p95_ms": 2.364,
+      "latency_p50_ms": 1.563,
+      "latency_p95_ms": 2.57,
       "passed": true,
       "reason_codes": [
         "AGGREGATE_POLICY_ALLOWED",
@@ -159,8 +159,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-direct-identifier",
-      "latency_p50_ms": 0.726,
-      "latency_p95_ms": 1.029,
+      "latency_p50_ms": 0.746,
+      "latency_p95_ms": 1.152,
       "passed": true,
       "reason_codes": [
         "DIRECT_IDENTIFIER"
@@ -170,8 +170,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-raw-sensitive-value",
-      "latency_p50_ms": 0.649,
-      "latency_p95_ms": 0.872,
+      "latency_p50_ms": 0.661,
+      "latency_p95_ms": 0.925,
       "passed": true,
       "reason_codes": [
         "RAW_SENSITIVE_COLUMN"
@@ -181,8 +181,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-wildcard",
-      "latency_p50_ms": 0.661,
-      "latency_p95_ms": 0.854,
+      "latency_p50_ms": 0.841,
+      "latency_p95_ms": 3.654,
       "passed": true,
       "reason_codes": [
         "WILDCARD_FORBIDDEN"
@@ -192,8 +192,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-no-aggregate",
-      "latency_p50_ms": 0.697,
-      "latency_p95_ms": 1.108,
+      "latency_p50_ms": 1.211,
+      "latency_p95_ms": 1.739,
       "passed": true,
       "reason_codes": [
         "AGGREGATE_REQUIRED"
@@ -204,7 +204,7 @@
       "expected": "DENY",
       "id": "deny-or-slicing",
       "latency_p50_ms": 1.01,
-      "latency_p95_ms": 1.19,
+      "latency_p95_ms": 1.442,
       "passed": true,
       "reason_codes": [
         "FILTER_NOT_ALLOWED"
@@ -214,8 +214,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-user-having",
-      "latency_p50_ms": 0.77,
-      "latency_p95_ms": 0.934,
+      "latency_p50_ms": 0.821,
+      "latency_p95_ms": 1.013,
       "passed": true,
       "reason_codes": [
         "UNSUPPORTED_QUERY_SHAPE"
@@ -225,8 +225,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-subquery",
-      "latency_p50_ms": 0.732,
-      "latency_p95_ms": 0.948,
+      "latency_p50_ms": 0.802,
+      "latency_p95_ms": 1.009,
       "passed": true,
       "reason_codes": [
         "UNSUPPORTED_QUERY_SHAPE"
@@ -236,8 +236,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-union",
-      "latency_p50_ms": 0.919,
-      "latency_p95_ms": 1.28,
+      "latency_p50_ms": 0.685,
+      "latency_p95_ms": 0.927,
       "passed": true,
       "reason_codes": [
         "SELECT_ONLY"
@@ -247,8 +247,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-write",
-      "latency_p50_ms": 0.581,
-      "latency_p95_ms": 0.804,
+      "latency_p50_ms": 0.637,
+      "latency_p95_ms": 0.88,
       "passed": true,
       "reason_codes": [
         "SELECT_ONLY"
@@ -258,8 +258,8 @@
       "actual": "DENY",
       "expected": "DENY",
       "id": "deny-unapproved-sum",
-      "latency_p50_ms": 0.789,
-      "latency_p95_ms": 1.132,
+      "latency_p50_ms": 0.839,
+      "latency_p95_ms": 0.984,
       "passed": true,
       "reason_codes": [
         "EXPRESSION_NOT_ALLOWED"
@@ -269,8 +269,8 @@
   "schema_version": "2.0",
   "source": {
     "benchmark_runner_sha256": "fb7c3c63e05ace1b42cba640f1824ad64af115c851bec557a8b269d7c5954a1b",
-    "dirty": true,
-    "revision": "ebc49a04f998e9a8b8b3f84c6fe674daa38529ae",
+    "dirty": false,
+    "revision": "d278292cfadb09405ccaf12cf3da320239f42a19",
     "source_tree_sha256": "d75965c90bf4d203daf79d3320baba7ec5f7d09032571bdf5636763ea68e9243",
     "uv_lock_sha256": "8f705b4011e084b2ef10b86acf10db586dd037780bd4f04936b1e70e06d0c953"
   }

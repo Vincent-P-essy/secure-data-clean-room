@@ -17,10 +17,10 @@ environment, not a performance promise.
 `inputs.sha256` binds the policy, corpus, lockfile and benchmark runner.
 `benchmark.json` retains environment and source metadata, while
 `observations.jsonl` retains every response envelope behind the SQL summary.
-`manifest.sha256` covers every generated artifact. The run intentionally records
-`dirty=true`: no commit was created during hardening, so the Git parent revision
-must be combined with the exact source-tree SHA-256 recorded in the JSON/Markdown.
-These hashes provide integrity, not authorship or trusted timestamping.
+`manifest.sha256` covers every generated artifact. The run records a clean source
+revision together with a hash of the relevant source tree; the latter remains the
+portable identity if the reviewed branch is later squash-merged. These hashes
+provide integrity, not authorship or trusted timestamping.
 
 Functional decisions should reproduce with the locked environment. Latency will
 vary with storage, scheduling, CPU, virtualization, and runtime versions.
