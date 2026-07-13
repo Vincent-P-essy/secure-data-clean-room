@@ -15,11 +15,11 @@ boundary.
 | API / CLI | identity context, validation, response envelope | principal mapping and configuration |
 | SQL policy engine | parse AST, reject unsupported syntax, build `QueryPlan` | versioned dataset policy |
 | trusted compiler | emit identifiers from policy and bind all literal values | typed `QueryPlan` only |
-| read-only executor | enforce immutable connection, authorizer, timeout, step and row limits | compiler output only |
-| variant guard | limit repeated slicing with changed predicates | canonical plan fingerprints |
-| privacy ledger | account unique `(plan, epsilon)` releases per principal | configured budget |
+| read-only executor | accept only a structured plan, revalidate/recompile it, then enforce immutable connection, authorizer, timeout, step and row limits | dataset policy |
+| variant guard | canonicalize alias/order/scalar equivalences and limit changed slices | versioned plan semantics |
+| privacy ledger | account unique `(dataset_version, semantic_plan, epsilon)` releases per principal | configured budget |
 | privacy mechanism | enforce release threshold and perturb bounded metrics | secret noise key and bounds |
-| audit chain | record identities, hashes, decisions, and controls | protected HMAC key |
+| audit chain + local head | record identities, hashes, decisions, and update an authenticated count/head in one transaction | protected HMAC key |
 
 ## Query state transition
 
@@ -39,7 +39,7 @@ BUDGETED
 AGGREGATED
    │ k-threshold + bounded sticky noise
    ▼
-RELEASED ──► append HMAC-linked audit record
+RELEASED ──► append HMAC-linked record + advance authenticated local head
 
 Any failed transition ──► DENIED ──► append reason code to audit chain
 ```
@@ -60,9 +60,19 @@ The demonstration separates two SQLite files:
   query-shape history, and HMAC-linked audit records. Raw SQL and filter values
   are not copied into the audit log; only a SHA-256 query digest is retained.
 
-SQLite's authorizer callback permits only reads of the configured table and
-columns and the `AVG`/`COUNT` functions. This is defense in depth because the
-compiler already emits the only statement that reaches it.
+`ReadOnlyDataset.execute` has no public string-SQL entry point. It accepts a
+`QueryPlan`, checks dataset/version, dimensions, metrics, aliases and filters,
+then recompiles the aggregate itself. Its private execution routine additionally
+uses SQLite's authorizer callback to permit only reads of the configured table
+and columns and the `AVG`/`COUNT` functions.
+
+The state database stores an HMAC-authenticated audit entry count and head hash.
+Appending an audit record and advancing this local checkpoint occur inside one
+`BEGIN IMMEDIATE` transaction. Verification rejects missing/corrupt checkpoints,
+malformed reason payloads, gaps, modified rows and a shorter log. Upgrading a
+legacy schema establishes its first checkpoint only after validating the existing
+chain (trust on first migration). Because log and checkpoint share local storage,
+whole-database deletion or rollback remains undetectable without an external head.
 
 ## Identity boundary
 
@@ -78,7 +88,7 @@ credentials, key rotation, and independently stored audit checkpoints.
 
 ## Deployment boundary
 
-The container runs as UID/GID 65532, drops every Linux capability, requests
+The container runs as UID/GID 10001, drops every Linux capability, requests
 `no-new-privileges`, uses a read-only root filesystem, and receives a writable
 named volume only at `/data`. It binds the host port to loopback. These controls
 reduce impact; they do not create tenant-grade isolation.

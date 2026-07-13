@@ -5,10 +5,11 @@ import hmac
 import random
 import sqlite3
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from .models import DatasetPolicy, Scalar
+from .models import DatasetPolicy, QueryPlan, Scalar
 
 _DEPARTMENTS: Final = ("Engineering", "Finance", "Operations", "Risk", "Sales", "Support")
 _REGIONS: Final = ("France", "Germany", "Spain")
@@ -18,6 +19,13 @@ _AGE_BANDS: Final = ("20-29", "30-39", "40-49", "50-59")
 
 class DatasetExecutionError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class AggregateExecution:
+    rows: list[dict[str, Scalar]]
+    sql: str
+    parameters: list[Scalar]
 
 
 def initialize_demo_dataset(path: Path, pseudonym_key: bytes, *, rows: int = 180) -> None:
@@ -104,7 +112,24 @@ class ReadOnlyDataset:
         self.statement_timeout_ms = statement_timeout_ms
         self.maximum_vm_steps = maximum_vm_steps
 
-    def execute(self, sql: str, parameters: list[Scalar]) -> list[dict[str, Scalar]]:
+    def execute(self, plan: QueryPlan) -> AggregateExecution:
+        """Execute only a validated structured aggregate plan.
+
+        The arbitrary SQL executor is deliberately private. Revalidating and compiling the
+        plan here makes the dataset boundary independent from the API/service call path.
+        """
+        if not isinstance(plan, QueryPlan):
+            raise DatasetExecutionError("structured aggregate query plan required")
+        from .policy import PolicyEngine, PolicyViolation
+
+        try:
+            sql, parameters = PolicyEngine(self.policy).compile(plan)
+        except (PolicyViolation, ValueError) as error:
+            raise DatasetExecutionError("structured aggregate query plan rejected") from error
+        rows = self._execute_compiled(sql, parameters)
+        return AggregateExecution(rows=rows, sql=sql, parameters=parameters)
+
+    def _execute_compiled(self, sql: str, parameters: list[Scalar]) -> list[dict[str, Scalar]]:
         if not self.path.is_file():
             raise DatasetExecutionError(f"dataset does not exist: {self.path}")
         connection = sqlite3.connect(

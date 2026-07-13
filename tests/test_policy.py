@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from secure_data_clean_room.models import Principal, Role
+from secure_data_clean_room.models import (
+    FilterPredicate,
+    Metric,
+    Principal,
+    QueryPlan,
+    Role,
+)
 from secure_data_clean_room.policy import PolicyEngine, PolicyViolation, load_policy
 
 
@@ -59,6 +66,7 @@ def test_inequality_filter_is_compiled(engine: PolicyEngine, analyst: Principal)
         ("SELECT * FROM employees", "WILDCARD_FORBIDDEN"),
         ("SELECT COUNT(salary) FROM employees", "COUNT_ONLY_ROWS"),
         ("SELECT SUM(salary) FROM employees", "EXPRESSION_NOT_ALLOWED"),
+        ("SELECT AVG(salary) AS __private FROM employees", "INVALID_ALIAS"),
         ("SELECT AVG(active) FROM employees", "METRIC_NOT_ALLOWED"),
         (
             "SELECT department AS team, AVG(salary) FROM employees GROUP BY department",
@@ -109,6 +117,7 @@ def test_inequality_filter_is_compiled(engine: PolicyEngine, analyst: Principal)
         ),
         ("SELECT AVG(salary) FROM other_table", "DATASET_NOT_ALLOWED"),
         ("SELECT AVG(salary) FROM main.employees", "QUALIFIED_TABLE_FORBIDDEN"),
+        ("SELECT AVG(employees.salary) FROM employees", "COLUMN_QUALIFIER"),
         ("SELECT AVG(salary) FROM employees LIMIT 1", "UNSUPPORTED_QUERY_SHAPE"),
         ("SELECT DISTINCT AVG(salary) FROM employees", "UNSUPPORTED_QUERY_SHAPE"),
         (
@@ -117,8 +126,9 @@ def test_inequality_filter_is_compiled(engine: PolicyEngine, analyst: Principal)
         ),
         (
             "SELECT a.department, AVG(a.salary) FROM employees a GROUP BY a.department",
-            "COLUMN_QUALIFIER",
+            "TABLE_ALIAS_FORBIDDEN",
         ),
+        ("SELECT COUNT(*) FROM employees ORDER BY random()", "UNSUPPORTED_QUERY_SHAPE"),
         (
             "SELECT department, AVG(salary) FROM employees "
             "JOIN employees b ON b.department = employees.department GROUP BY department",
@@ -165,6 +175,170 @@ def test_too_many_filters(engine: PolicyEngine, analyst: Principal) -> None:
     with pytest.raises(PolicyViolation) as captured:
         engine.plan(sql, analyst)
     assert captured.value.code == "TOO_MANY_FILTERS"
+
+
+def test_duplicate_metric_is_rejected_even_with_distinct_aliases(
+    engine: PolicyEngine, analyst: Principal
+) -> None:
+    with pytest.raises(PolicyViolation) as captured:
+        engine.plan(
+            "SELECT AVG(salary) AS first, AVG(salary) AS second FROM employees",
+            analyst,
+        )
+    assert captured.value.code == "DUPLICATE_METRIC"
+
+
+def test_single_value_in_is_canonicalized_to_equality(
+    engine: PolicyEngine, analyst: Principal
+) -> None:
+    plan = engine.plan("SELECT COUNT(*) FROM employees WHERE region IN ('France')", analyst)
+    assert plan.filters == (FilterPredicate("region", "eq", ("France",)),)
+
+
+def test_parenthesized_filter_and_finite_numeric_literal(
+    engine: PolicyEngine, analyst: Principal
+) -> None:
+    plan = engine.plan("SELECT COUNT(*) FROM employees WHERE (active = 1)", analyst)
+    assert plan.filters == (FilterPredicate("active", "eq", (1,)),)
+    with pytest.raises(PolicyViolation, match="finite"):
+        engine.plan("SELECT COUNT(*) FROM employees WHERE active = 1e999", analyst)
+
+
+@pytest.mark.parametrize(
+    ("plan", "code"),
+    [
+        ("not-a-plan", "STRUCTURED_PLAN_REQUIRED"),
+        (
+            QueryPlan("other", (), (Metric("count", None, "rows"),), (), "2026-07-12"),
+            "DATASET_VERSION_MISMATCH",
+        ),
+        (
+            QueryPlan("workforce-v1", (), (Metric("count", None, "rows"),), (), "old"),
+            "DATASET_VERSION_MISMATCH",
+        ),
+        (QueryPlan("workforce-v1", (), (), (), "2026-07-12"), "AGGREGATE_REQUIRED"),
+        (
+            QueryPlan(
+                "workforce-v1",
+                ("department", "department"),
+                (Metric("count", None, "rows"),),
+                (),
+                "2026-07-12",
+            ),
+            "DUPLICATE_DIMENSION",
+        ),
+        (
+            QueryPlan("workforce-v1", (), (Metric("count", None, "__reserved"),), (), "2026-07-12"),
+            "INVALID_ALIAS",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                ("department",),
+                (Metric("count", None, "department"),),
+                (),
+                "2026-07-12",
+            ),
+            "DUPLICATE_OUTPUT",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("avg", "salary", "one"), Metric("avg", "salary", "two")),
+                (),
+                "2026-07-12",
+            ),
+            "DUPLICATE_METRIC",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", "salary", "unsafe"),),
+                (),
+                "2026-07-12",
+            ),
+            "METRIC_NOT_ALLOWED",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                tuple(FilterPredicate("region", "eq", (str(index),)) for index in range(5)),
+                "2026-07-12",
+            ),
+            "TOO_MANY_FILTERS",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                (FilterPredicate("salary", "eq", (1,)),),
+                "2026-07-12",
+            ),
+            "FILTER_COLUMN_NOT_ALLOWED",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                (FilterPredicate("region", cast(Any, "gt"), (1,)),),
+                "2026-07-12",
+            ),
+            "FILTER_NOT_ALLOWED",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                (FilterPredicate("region", "in", ()),),
+                "2026-07-12",
+            ),
+            "INVALID_IN_LIST",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                (FilterPredicate("region", "eq", ("France", "Germany")),),
+                "2026-07-12",
+            ),
+            "LITERAL_REQUIRED",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                (FilterPredicate("active", "eq", (cast(Any, object()),)),),
+                "2026-07-12",
+            ),
+            "LITERAL_REQUIRED",
+        ),
+        (
+            QueryPlan(
+                "workforce-v1",
+                (),
+                (Metric("count", None, "rows"),),
+                (FilterPredicate("active", "eq", (float("nan"),)),),
+                "2026-07-12",
+            ),
+            "INVALID_LITERAL",
+        ),
+    ],
+)
+def test_compiler_revalidates_structured_plans(
+    engine: PolicyEngine, plan: object, code: str
+) -> None:
+    with pytest.raises(PolicyViolation) as captured:
+        engine.compile(cast(Any, plan))
+    assert captured.value.code == code
 
 
 def test_policy_loader_reports_invalid_file(tmp_path: Path) -> None:

@@ -6,9 +6,11 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 WORKDIR /app
-RUN python -m pip install uv==0.11.23
+RUN python -m pip install uv==0.11.28
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
+COPY fixtures ./fixtures
+COPY web ./web
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b

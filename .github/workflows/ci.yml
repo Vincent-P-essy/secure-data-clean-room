@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          version: "0.11.23"
+          version: "0.11.28"
           enable-cache: true
       - run: uv sync --frozen --all-extras
       - run: uv lock --check
@@ -32,6 +32,16 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest --cov=secure_data_clean_room --cov-report=xml
       - run: CLEAN_ROOM_DEMO_MODE=1 uv run clean-room benchmark --out /tmp/benchmark --iterations 3
+      - run: cd /tmp/benchmark && sha256sum --check manifest.sha256
+      - run: cd benchmarks/reference && sha256sum --check manifest.sha256
+      - run: sha256sum --check benchmarks/reference/inputs.sha256
+      - run: uv build --wheel --out-dir /tmp/wheel-dist
+      - name: Smoke-test installed wheel outside the repository
+        run: |
+          uv venv --python 3.12 /tmp/clean-room-wheel-venv
+          uv pip install --python /tmp/clean-room-wheel-venv/bin/python /tmp/wheel-dist/*.whl
+          cd /tmp
+          /tmp/clean-room-wheel-venv/bin/python "$GITHUB_WORKSPACE/scripts/wheel_smoke.py"
       - run: docker compose config --quiet
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

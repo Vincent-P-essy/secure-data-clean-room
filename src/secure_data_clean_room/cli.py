@@ -75,7 +75,13 @@ def main(argv: list[str] | None = None) -> int:
             iterations=arguments.iterations,
         )
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 0 if report["expectation_accuracy"] == 1.0 else 4
+        return (
+            0
+            if report["expectation_accuracy"] == 1.0
+            and report["control_accuracy"] == 1.0
+            and report["audit_chain_valid"]
+            else 4
+        )
     if arguments.command == "serve":
         uvicorn.run(create_app(settings), host=arguments.host, port=arguments.port)
         return 0

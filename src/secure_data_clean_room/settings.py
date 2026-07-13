@@ -23,7 +23,10 @@ class Settings:
     def from_environment(cls, root: Path | None = None) -> Settings:
         root = (root or Path.cwd()).resolve()
         demo_mode = os.getenv("CLEAN_ROOM_DEMO_MODE", "0") == "1"
-        policy_path = Path(os.getenv("CLEAN_ROOM_POLICY", root / "fixtures/policy.json"))
+        configured_policy = os.getenv("CLEAN_ROOM_POLICY")
+        policy_path = (
+            Path(configured_policy) if configured_policy is not None else _default_policy_path(root)
+        )
         data_dir = Path(os.getenv("CLEAN_ROOM_DATA_DIR", root / "var"))
         api_principals = _api_principals(os.getenv("CLEAN_ROOM_API_KEYS"), demo_mode)
         return cls(
@@ -35,6 +38,13 @@ class Settings:
             pseudonym_key=_secret("CLEAN_ROOM_PSEUDONYM_KEY", demo_mode),
             api_principals=api_principals,
         )
+
+
+def _default_policy_path(root: Path) -> Path:
+    repository_policy = root / "fixtures/policy.json"
+    if repository_policy.is_file():
+        return repository_policy
+    return Path(__file__).resolve().parent / "resources/policy.json"
 
 
 def _secret(name: str, demo_mode: bool) -> bytes:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Literal, cast
@@ -82,6 +83,12 @@ class PolicyEngine:
             )
         if len(set(dimensions)) != len(dimensions):
             raise PolicyViolation("DUPLICATE_DIMENSION", "a dimension may be selected only once")
+        metric_identities = [(metric.function, metric.column) for metric in metrics]
+        if len(set(metric_identities)) != len(metric_identities):
+            raise PolicyViolation(
+                "DUPLICATE_METRIC",
+                "the same aggregate may be selected only once, regardless of alias",
+            )
 
         group = statement.args.get("group")
         grouped = [] if group is None else [self._plain_column(item) for item in group.expressions]
@@ -104,9 +111,11 @@ class PolicyEngine:
             dimensions=tuple(dimensions),
             metrics=tuple(metrics),
             filters=tuple(filters),
+            dataset_version=self.policy.dataset_version,
         )
 
     def compile(self, plan: QueryPlan) -> tuple[str, list[Scalar]]:
+        self._validate_plan(plan)
         select_parts = [self._quote(column) for column in plan.dimensions]
         for metric in plan.metrics:
             if metric.function == "count":
@@ -147,6 +156,17 @@ class PolicyEngine:
         return "\n".join(fragments), parameters
 
     def _reject_unsupported_shape(self, statement: exp.Select) -> None:
+        allowed_arguments = {"expressions", "from_", "where", "group"}
+        unsupported_arguments = [
+            name
+            for name, value in statement.args.items()
+            if name not in allowed_arguments and value not in (None, False)
+        ]
+        if unsupported_arguments:
+            raise PolicyViolation(
+                "UNSUPPORTED_QUERY_SHAPE",
+                f"unsupported SELECT clause: {sorted(unsupported_arguments)[0]}",
+            )
         forbidden: tuple[type[exp.Expression], ...] = (
             exp.Join,
             exp.Subquery,
@@ -169,6 +189,13 @@ class PolicyEngine:
         if any(isinstance(node, exp.Star) for node in statement.expressions):
             raise PolicyViolation("WILDCARD_FORBIDDEN", "raw wildcard projection is forbidden")
 
+        group = statement.args.get("group")
+        if group is not None and any(
+            name != "expressions" and value not in (None, False)
+            for name, value in group.args.items()
+        ):
+            raise PolicyViolation("UNSUPPORTED_QUERY_SHAPE", "GROUP BY modifiers are not supported")
+
     def _validate_table(self, statement: exp.Select) -> None:
         tables = list(statement.find_all(exp.Table))
         if len(tables) != 1 or tables[0].name.lower() != self.policy.table.lower():
@@ -178,6 +205,18 @@ class PolicyEngine:
         if tables[0].db or tables[0].catalog:
             raise PolicyViolation(
                 "QUALIFIED_TABLE_FORBIDDEN", "database qualification is forbidden"
+            )
+        if tables[0].alias:
+            raise PolicyViolation("TABLE_ALIAS_FORBIDDEN", "table aliases are not supported")
+        unsupported_table_arguments = [
+            name
+            for name, value in tables[0].args.items()
+            if name not in {"this", "db", "catalog"} and value not in (None, False, [], ())
+        ]
+        if unsupported_table_arguments:
+            raise PolicyViolation(
+                "UNSUPPORTED_QUERY_SHAPE",
+                f"unsupported table modifier: {sorted(unsupported_table_arguments)[0]}",
             )
 
     def _projection(self, projection: exp.Expression) -> tuple[str | None, Metric | None]:
@@ -228,7 +267,7 @@ class PolicyEngine:
     def _plain_column(self, expression: exp.Expression) -> str:
         if not isinstance(expression, exp.Column):
             raise PolicyViolation("COLUMN_REQUIRED", "an allowlisted column is required")
-        if expression.table and expression.table.lower() != self.policy.table.lower():
+        if expression.table or expression.db or expression.catalog:
             raise PolicyViolation("COLUMN_QUALIFIER", "column qualifier is not allowed")
         return expression.name.lower()
 
@@ -251,6 +290,8 @@ class PolicyEngine:
             values = tuple(self._literal(item) for item in expression.expressions)
             if not values or len(values) > 20:
                 raise PolicyViolation("INVALID_IN_LIST", "IN requires between one and 20 literals")
+            if len(values) == 1:
+                return [FilterPredicate(column, "eq", values)]
             return [FilterPredicate(column, "in", values)]
         raise PolicyViolation(
             "FILTER_NOT_ALLOWED", "filters support only AND-combined =, !=, and IN predicates"
@@ -278,7 +319,79 @@ class PolicyEngine:
             number = float(expression.this)
         except ValueError as error:
             raise PolicyViolation("INVALID_LITERAL", "numeric literal is invalid") from error
+        if not math.isfinite(number):
+            raise PolicyViolation("INVALID_LITERAL", "numeric literal must be finite")
         return int(number) if number.is_integer() else number
+
+    def _validate_plan(self, plan: QueryPlan) -> None:
+        if not isinstance(plan, QueryPlan):
+            raise PolicyViolation("STRUCTURED_PLAN_REQUIRED", "a typed query plan is required")
+        if (
+            plan.dataset != self.policy.dataset
+            or plan.dataset_version != self.policy.dataset_version
+        ):
+            raise PolicyViolation(
+                "DATASET_VERSION_MISMATCH", "query plan does not match the active dataset version"
+            )
+        if not plan.metrics:
+            raise PolicyViolation("AGGREGATE_REQUIRED", "query plan requires an aggregate")
+        if len(plan.dimensions) != len(set(plan.dimensions)):
+            raise PolicyViolation("DUPLICATE_DIMENSION", "query plan repeats a dimension")
+        if any(
+            dimension not in self.policy.dimensions or dimension in self.policy.forbidden_columns
+            for dimension in plan.dimensions
+        ):
+            raise PolicyViolation("RAW_SENSITIVE_COLUMN", "query plan contains an unsafe dimension")
+
+        output_names = set(plan.dimensions)
+        metric_identities: set[tuple[str, str | None]] = set()
+        for metric in plan.metrics:
+            if not _ALIAS.fullmatch(metric.alias) or metric.alias.startswith("__"):
+                raise PolicyViolation("INVALID_ALIAS", "query plan contains an invalid alias")
+            if metric.alias in output_names:
+                raise PolicyViolation("DUPLICATE_OUTPUT", "query plan repeats an output name")
+            output_names.add(metric.alias)
+            identity = (metric.function, metric.column)
+            if identity in metric_identities:
+                raise PolicyViolation("DUPLICATE_METRIC", "query plan repeats an aggregate")
+            metric_identities.add(identity)
+            if metric.function == "count" and metric.column is None:
+                configured = self.policy.metrics.get("rows")
+                allowed = configured is not None and "count" in configured.functions
+            elif metric.function == "avg" and metric.column is not None:
+                configured = self.policy.metrics.get(metric.column)
+                allowed = configured is not None and "avg" in configured.functions
+            else:
+                allowed = False
+            if not allowed:
+                raise PolicyViolation("METRIC_NOT_ALLOWED", "query plan contains an unsafe metric")
+
+        if len(plan.filters) > self.policy.max_filters:
+            raise PolicyViolation("TOO_MANY_FILTERS", "query plan contains too many filters")
+        for predicate in plan.filters:
+            if (
+                predicate.column not in self.policy.filter_columns
+                or predicate.column in self.policy.forbidden_columns
+            ):
+                raise PolicyViolation(
+                    "FILTER_COLUMN_NOT_ALLOWED", "query plan contains an unsafe filter"
+                )
+            if predicate.operator not in {"eq", "neq", "in"}:
+                raise PolicyViolation(
+                    "FILTER_NOT_ALLOWED", "query plan contains an unsafe operator"
+                )
+            if predicate.operator == "in":
+                if not 1 <= len(predicate.values) <= 20:
+                    raise PolicyViolation(
+                        "INVALID_IN_LIST", "query plan contains an invalid IN list"
+                    )
+            elif len(predicate.values) != 1:
+                raise PolicyViolation("LITERAL_REQUIRED", "query plan filter arity is invalid")
+            for value in predicate.values:
+                if not isinstance(value, (str, int, float, bool)) and value is not None:
+                    raise PolicyViolation("LITERAL_REQUIRED", "query plan filter is not scalar")
+                if isinstance(value, float) and not math.isfinite(value):
+                    raise PolicyViolation("INVALID_LITERAL", "query plan filter must be finite")
 
     @staticmethod
     def _quote(identifier: str) -> str:

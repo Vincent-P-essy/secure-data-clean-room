@@ -11,7 +11,8 @@ from secure_data_clean_room.database import (
     _sqlite_scalar,
     initialize_demo_dataset,
 )
-from secure_data_clean_room.policy import load_policy
+from secure_data_clean_room.models import Metric, Principal, QueryPlan, Role
+from secure_data_clean_room.policy import PolicyEngine, load_policy
 
 
 def test_demo_dataset_contains_only_pseudonyms(tmp_path: Path, repository_root: Path) -> None:
@@ -28,14 +29,17 @@ def test_demo_dataset_contains_only_pseudonyms(tmp_path: Path, repository_root: 
     assert len(set(tokens)) == 180 and all(len(token) == 32 for token in tokens)
     assert metadata["contains_real_personal_data"] == "false"
 
-    reader = ReadOnlyDataset(path, load_policy(repository_root / "fixtures/policy.json"))
-    rows = reader.execute(
-        'SELECT "department", AVG("salary") AS "average", COUNT(*) AS "__group_size" '
-        'FROM "employees" GROUP BY "department" HAVING COUNT(*) >= ? LIMIT ?',
-        [10, 100],
+    policy = load_policy(repository_root / "fixtures/policy.json")
+    reader = ReadOnlyDataset(path, policy)
+    plan = PolicyEngine(policy).plan(
+        "SELECT department, AVG(salary) AS average FROM employees GROUP BY department",
+        Principal(subject="database.test", role=Role.ANALYST),
     )
+    execution = reader.execute(plan)
+    rows = execution.rows
     assert len(rows) == 6
     assert all(int(row["__group_size"] or 0) == 30 for row in rows)
+    assert "HAVING COUNT(*) >= ?" in execution.sql
 
 
 def test_dataset_rejects_weak_key_and_small_fixture(tmp_path: Path) -> None:
@@ -50,18 +54,29 @@ def test_read_only_executor_denies_untrusted_statement(
 ) -> None:
     path = tmp_path / "dataset.db"
     initialize_demo_dataset(path, b"x" * 32)
-    reader = ReadOnlyDataset(path, load_policy(repository_root / "fixtures/policy.json"))
-    with pytest.raises(DatasetExecutionError, match="read-only query failed"):
-        reader.execute("SELECT subject_token FROM employees", [])
-    with pytest.raises(DatasetExecutionError, match="read-only query failed"):
-        reader.execute("PRAGMA schema_version", [])
+    policy = load_policy(repository_root / "fixtures/policy.json")
+    reader = ReadOnlyDataset(path, policy)
+    with pytest.raises(DatasetExecutionError, match="structured aggregate"):
+        reader.execute("SELECT subject_token FROM employees")  # type: ignore[arg-type]
+    unsafe_plan = QueryPlan(
+        dataset=policy.dataset,
+        dataset_version=policy.dataset_version,
+        dimensions=("salary",),
+        metrics=(Metric("count", None, "rows"),),
+        filters=(),
+    )
+    with pytest.raises(DatasetExecutionError, match="rejected"):
+        reader.execute(unsafe_plan)
 
 
 def test_missing_dataset_and_unsupported_scalar(tmp_path: Path, repository_root: Path) -> None:
-    reader = ReadOnlyDataset(
-        tmp_path / "missing.db", load_policy(repository_root / "fixtures/policy.json")
+    policy = load_policy(repository_root / "fixtures/policy.json")
+    reader = ReadOnlyDataset(tmp_path / "missing.db", policy)
+    plan = PolicyEngine(policy).plan(
+        "SELECT COUNT(*) FROM employees",
+        Principal(subject="database.test", role=Role.ANALYST),
     )
     with pytest.raises(DatasetExecutionError, match="does not exist"):
-        reader.execute("SELECT 1", [])
+        reader.execute(plan)
     with pytest.raises(DatasetExecutionError, match="unsupported"):
         _sqlite_scalar(b"bytes")

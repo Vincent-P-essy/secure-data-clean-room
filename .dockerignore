@@ -4,6 +4,13 @@
 .pytest_cache
 .ruff_cache
 .mypy_cache
+.coverage
+coverage.xml
+dist
+build
+docs
+tests
+scripts
 reports
 var
 *.db

@@ -25,11 +25,11 @@ important residual risks but are not solved by this single service.
 | SQL injection | AST reduction; compiler-owned identifiers; bound literals | parser or compiler vulnerability |
 | Bypass through joins, CTEs, subqueries, unions, windows | fail-closed unsupported-shape list and adversarial tests | a new AST node needs explicit review |
 | Small-group disclosure | compiler-added `HAVING COUNT(*) >= 10`; pre-release group check | group membership can still be inferred from public context |
-| Repeated-query averaging | sticky noise; unique-release ledger | changed but equivalent query forms may consume budget before detection |
-| Differencing / slicing | four-variant limit per plan shape per 24 hours; filter allowlist | heuristic can miss semantically equivalent shapes and cause false refusals |
+| Repeated-query averaging | semantic release key binds dataset version, filters, dimensions and metric identity; aliases/order reuse sticky noise | arbitrary adaptive composition has no formal proof |
+| Differencing / slicing | canonical alias/order/scalar representation; four-variant limit per aggregate/filter shape per 24 hours | heuristic can still miss more complex semantic equivalences and cause false refusals |
 | Unbounded numeric contribution | policy bounds; synthetic fixture constraints; output clamp | a real ingestion pipeline must enforce clipping before storage |
 | Budget race | `BEGIN IMMEDIATE` transaction and unique release key | single-node SQLite limits throughput |
-| Audit deletion or editing | previous-hash chain plus HMAC; full-chain verifier | attacker with key and database access can rewrite history; no external checkpoint |
+| Audit editing or suffix deletion | previous-hash chain plus HMAC-authenticated local count/head checkpoint | whole-state rollback/deletion, or an attacker with the key, defeats a local checkpoint; no external anchor |
 | Denial of service | SQL subset; step, time, result, memory, PID and CPU limits | concurrent request admission control is not implemented |
 | Stolen API key | role separation; no-store responses; loopback demo bind | static keys lack expiry, device binding, and revocation workflow |
 | Secret disclosure in logs | audit stores query digest and reason codes, not SQL | framework or infrastructure logs require separate review |

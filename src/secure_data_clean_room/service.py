@@ -49,14 +49,14 @@ class CleanRoomService:
             ).hexdigest()
             reservation = self.state.reserve_budget(
                 principal.subject,
+                plan.dataset_version,
                 release_fingerprint,
                 epsilon,
                 self.policy.principal_budget,
             )
-            rewritten_sql, parameters = self.engine.compile(plan)
-            rows = self.dataset.execute(rewritten_sql, parameters)
+            execution = self.dataset.execute(plan)
             protected = self.privacy.protect(
-                rows, plan, epsilon, release_fingerprint=release_fingerprint
+                execution.rows, plan, epsilon, release_fingerprint=release_fingerprint
             )
             reasons = [
                 "AGGREGATE_POLICY_ALLOWED",
@@ -78,7 +78,7 @@ class CleanRoomService:
                 request_id=request_id,
                 decision=Decision.ALLOW,
                 reason_codes=reasons,
-                canonical_query=rewritten_sql,
+                canonical_query=execution.sql,
                 columns=[*plan.dimensions, *(metric.alias for metric in plan.metrics)],
                 rows=protected.rows,
                 privacy=PrivacyMetadata(

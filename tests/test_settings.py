@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from secure_data_clean_room.models import Role
-from secure_data_clean_room.settings import Settings
+from secure_data_clean_room.settings import Settings, _default_policy_path
 
 
 def test_demo_settings_are_explicit_and_deterministic(
@@ -59,3 +59,29 @@ def test_invalid_api_key_json_is_rejected(
     monkeypatch.setenv("CLEAN_ROOM_API_KEYS", "not-json")
     with pytest.raises(ValueError, match="JSON object"):
         Settings.from_environment(repository_root)
+
+
+def test_missing_production_secret_and_short_token_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, repository_root: Path
+) -> None:
+    monkeypatch.delenv("CLEAN_ROOM_DEMO_MODE", raising=False)
+    monkeypatch.setenv(
+        "CLEAN_ROOM_API_KEYS",
+        json.dumps({"a-production-token": {"subject": "prod.analyst", "role": "analyst"}}),
+    )
+    for name in ("CLEAN_ROOM_NOISE_KEY", "CLEAN_ROOM_AUDIT_KEY", "CLEAN_ROOM_PSEUDONYM_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError, match="CLEAN_ROOM_NOISE_KEY"):
+        Settings.from_environment(repository_root)
+
+    monkeypatch.setenv(
+        "CLEAN_ROOM_API_KEYS",
+        json.dumps({"short": {"subject": "x", "role": "analyst"}}),
+    )
+    with pytest.raises(ValueError, match="16"):
+        Settings.from_environment(repository_root)
+
+
+def test_default_policy_falls_back_to_packaged_resource(tmp_path: Path) -> None:
+    path = _default_policy_path(tmp_path)
+    assert path.as_posix().endswith("secure_data_clean_room/resources/policy.json")

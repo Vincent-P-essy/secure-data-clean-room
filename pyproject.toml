@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "secure-data-clean-room"
-version = "0.1.0"
+version = "0.2.0"
 description = "Policy-enforced aggregate analytics over sensitive datasets"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,6 +31,10 @@ clean-room = "secure_data_clean_room.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/secure_data_clean_room"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"fixtures/policy.json" = "secure_data_clean_room/resources/policy.json"
+"web" = "secure_data_clean_room/resources/web"
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --strict-config"

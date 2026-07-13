@@ -1,0 +1,277 @@
+{
+  "allowed_cases": 4,
+  "audit_chain_valid": true,
+  "audit_entries": 295,
+  "cases": 14,
+  "control_accuracy": 1.0,
+  "control_checks": 5,
+  "controls": [
+    {
+      "actual": "PASS",
+      "evidence": {
+        "budget_spent": 0.5,
+        "same_protected_values": true
+      },
+      "expected": "PASS",
+      "id": "sticky-equivalent-release",
+      "passed": true
+    },
+    {
+      "actual": "PASS",
+      "evidence": {
+        "decisions": [
+          "ALLOW",
+          "ALLOW",
+          "ALLOW",
+          "ALLOW",
+          "ALLOW",
+          "DENY"
+        ],
+        "last_reason_codes": [
+          "PRIVACY_BUDGET_EXHAUSTED"
+        ]
+      },
+      "expected": "PASS",
+      "id": "privacy-budget-exhaustion",
+      "passed": true
+    },
+    {
+      "actual": "PASS",
+      "evidence": {
+        "reason_codes": [
+          [
+            "ROLE_CANNOT_QUERY_DATA"
+          ],
+          [
+            "ROLE_CANNOT_QUERY_DATA"
+          ]
+        ]
+      },
+      "expected": "PASS",
+      "id": "control-plane-roles-denied-data",
+      "passed": true
+    },
+    {
+      "actual": "PASS",
+      "evidence": {
+        "decisions": [
+          "ALLOW",
+          "ALLOW",
+          "ALLOW",
+          "ALLOW",
+          "DENY"
+        ],
+        "last_reason_codes": [
+          "DIFFERENCING_RISK"
+        ]
+      },
+      "expected": "PASS",
+      "id": "canonical-differencing-guard",
+      "passed": true
+    },
+    {
+      "actual": "PASS",
+      "evidence": {
+        "full_delete_valid": false,
+        "tail_delete_valid": false
+      },
+      "expected": "PASS",
+      "id": "audit-checkpoint-truncation",
+      "passed": true
+    }
+  ],
+  "corpus_sha256": "4b24c149e0498578851718cd8ef92e2187e1fcd0448a21e24f7ccf01f6e756d5",
+  "denied_cases": 10,
+  "environment": {
+    "platform": "Linux-5.15.0-185-generic-x86_64-with-glibc2.35",
+    "python": "3.12.13"
+  },
+  "expectation_accuracy": 1.0,
+  "input_sha256": {
+    "fixtures/corpus/queries.json": "4b24c149e0498578851718cd8ef92e2187e1fcd0448a21e24f7ccf01f6e756d5",
+    "fixtures/policy.json": "729d9846c753bed704db6c3d869d1655d79ce3215e6672685f3435deab1fc4fb",
+    "src/secure_data_clean_room/benchmark.py": "fb7c3c63e05ace1b42cba640f1824ad64af115c851bec557a8b269d7c5954a1b",
+    "uv.lock": "8f705b4011e084b2ef10b86acf10db586dd037780bd4f04936b1e70e06d0c953"
+  },
+  "iterations_per_case": 20,
+  "results": [
+    {
+      "actual": "ALLOW",
+      "expected": "ALLOW",
+      "id": "allow-department-average",
+      "latency_p50_ms": 1.509,
+      "latency_p95_ms": 3.749,
+      "passed": true,
+      "reason_codes": [
+        "AGGREGATE_POLICY_ALLOWED",
+        "PARAMETERIZED_QUERY_REBUILT",
+        "MINIMUM_GROUP_SIZE_ENFORCED",
+        "PRIVACY_RELEASE_APPLIED",
+        "STICKY_RELEASE_REUSED"
+      ]
+    },
+    {
+      "actual": "ALLOW",
+      "expected": "ALLOW",
+      "id": "allow-global-count",
+      "latency_p50_ms": 1.252,
+      "latency_p95_ms": 1.713,
+      "passed": true,
+      "reason_codes": [
+        "AGGREGATE_POLICY_ALLOWED",
+        "PARAMETERIZED_QUERY_REBUILT",
+        "MINIMUM_GROUP_SIZE_ENFORCED",
+        "PRIVACY_RELEASE_APPLIED",
+        "STICKY_RELEASE_REUSED"
+      ]
+    },
+    {
+      "actual": "ALLOW",
+      "expected": "ALLOW",
+      "id": "allow-filtered-performance",
+      "latency_p50_ms": 1.901,
+      "latency_p95_ms": 2.886,
+      "passed": true,
+      "reason_codes": [
+        "AGGREGATE_POLICY_ALLOWED",
+        "PARAMETERIZED_QUERY_REBUILT",
+        "MINIMUM_GROUP_SIZE_ENFORCED",
+        "PRIVACY_RELEASE_APPLIED",
+        "STICKY_RELEASE_REUSED"
+      ]
+    },
+    {
+      "actual": "ALLOW",
+      "expected": "ALLOW",
+      "id": "allow-approved-in-filter",
+      "latency_p50_ms": 1.563,
+      "latency_p95_ms": 2.57,
+      "passed": true,
+      "reason_codes": [
+        "AGGREGATE_POLICY_ALLOWED",
+        "PARAMETERIZED_QUERY_REBUILT",
+        "MINIMUM_GROUP_SIZE_ENFORCED",
+        "PRIVACY_RELEASE_APPLIED",
+        "STICKY_RELEASE_REUSED"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-direct-identifier",
+      "latency_p50_ms": 0.746,
+      "latency_p95_ms": 1.152,
+      "passed": true,
+      "reason_codes": [
+        "DIRECT_IDENTIFIER"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-raw-sensitive-value",
+      "latency_p50_ms": 0.661,
+      "latency_p95_ms": 0.925,
+      "passed": true,
+      "reason_codes": [
+        "RAW_SENSITIVE_COLUMN"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-wildcard",
+      "latency_p50_ms": 0.841,
+      "latency_p95_ms": 3.654,
+      "passed": true,
+      "reason_codes": [
+        "WILDCARD_FORBIDDEN"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-no-aggregate",
+      "latency_p50_ms": 1.211,
+      "latency_p95_ms": 1.739,
+      "passed": true,
+      "reason_codes": [
+        "AGGREGATE_REQUIRED"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-or-slicing",
+      "latency_p50_ms": 1.01,
+      "latency_p95_ms": 1.442,
+      "passed": true,
+      "reason_codes": [
+        "FILTER_NOT_ALLOWED"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-user-having",
+      "latency_p50_ms": 0.821,
+      "latency_p95_ms": 1.013,
+      "passed": true,
+      "reason_codes": [
+        "UNSUPPORTED_QUERY_SHAPE"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-subquery",
+      "latency_p50_ms": 0.802,
+      "latency_p95_ms": 1.009,
+      "passed": true,
+      "reason_codes": [
+        "UNSUPPORTED_QUERY_SHAPE"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-union",
+      "latency_p50_ms": 0.685,
+      "latency_p95_ms": 0.927,
+      "passed": true,
+      "reason_codes": [
+        "SELECT_ONLY"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-write",
+      "latency_p50_ms": 0.637,
+      "latency_p95_ms": 0.88,
+      "passed": true,
+      "reason_codes": [
+        "SELECT_ONLY"
+      ]
+    },
+    {
+      "actual": "DENY",
+      "expected": "DENY",
+      "id": "deny-unapproved-sum",
+      "latency_p50_ms": 0.839,
+      "latency_p95_ms": 0.984,
+      "passed": true,
+      "reason_codes": [
+        "EXPRESSION_NOT_ALLOWED"
+      ]
+    }
+  ],
+  "schema_version": "2.0",
+  "source": {
+    "benchmark_runner_sha256": "fb7c3c63e05ace1b42cba640f1824ad64af115c851bec557a8b269d7c5954a1b",
+    "dirty": false,
+    "revision": "d278292cfadb09405ccaf12cf3da320239f42a19",
+    "source_tree_sha256": "d75965c90bf4d203daf79d3320baba7ec5f7d09032571bdf5636763ea68e9243",
+    "uv_lock_sha256": "8f705b4011e084b2ef10b86acf10db586dd037780bd4f04936b1e70e06d0c953"
+  }
+}
