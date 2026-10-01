@@ -16,6 +16,12 @@ This is a reproducible security demonstrator over synthetic workforce data. It
 is not a certified differential-privacy product, a general SQL gateway, or a
 substitute for legal and data-governance review.
 
+## Running example
+
+![secure-data-clean-room running locally](docs/screenshots/application.png)
+
+A protected aggregate query executed against the synthetic workforce dataset in local demo mode. [Commands and test results](docs/verification.md).
+
 ## Security properties demonstrated
 
 - `SELECT`-only AST validation; joins, subqueries, unions, CTEs, user-controlled
