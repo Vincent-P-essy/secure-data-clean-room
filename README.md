@@ -16,11 +16,11 @@ This is a reproducible security demonstrator over synthetic workforce data. It
 is not a certified differential-privacy product, a general SQL gateway, or a
 substitute for legal and data-governance review.
 
-## Running example
+## Dashboard Preview
 
-![secure-data-clean-room running locally](docs/screenshots/application.png)
+![Protected aggregate query on the bundled demonstration dataset](docs/screenshots/dashboard-overview.png)
 
-A protected aggregate query executed against the synthetic workforce dataset in local demo mode. [Commands and test results](docs/verification.md).
+Protected aggregation over the project’s built-in demonstration workforce dataset, with `CLEAN_ROOM_DEMO_MODE=1`. The interface masks its demonstration API key.
 
 ## Security properties demonstrated
 
